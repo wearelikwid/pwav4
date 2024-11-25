@@ -55,8 +55,15 @@ function hideLoadingIndicator() {
 }
 
 function showError(message) {
+    const errorElement = document.getElementById('error-message');
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+        setTimeout(() => {
+            errorElement.style.display = 'none';
+        }, 5000);
+    }
     console.error(message);
-    alert(message);
 }
 
 // Make addSection globally available
@@ -76,7 +83,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         initializeForm();
 
-        if (isEdit && workoutId) {
+        if (workoutId) {
             document.getElementById('page-title').textContent = 'Edit Workout';
             loadWorkoutData(workoutId);
         } else {
@@ -88,6 +95,24 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeForm() {
     const form = document.getElementById('create-workout-form');
     form.addEventListener('submit', handleFormSubmit);
+}
+
+function validateWorkoutData(workoutData) {
+    if (!workoutData.name || workoutData.name.trim() === '') {
+        throw new Error('Workout name is required');
+    }
+    if (!workoutData.type || workoutData.type.trim() === '') {
+        throw new Error('Workout type is required');
+    }
+    if (!workoutData.sections || workoutData.sections.length === 0) {
+        throw new Error('At least one section is required');
+    }
+    
+    workoutData.sections.forEach((section, sIndex) => {
+        if (!section.exercises || section.exercises.length === 0) {
+            throw new Error(`Section ${sIndex + 1} must have at least one exercise`);
+        }
+    });
 }
 
 async function handleFormSubmit(event) {
@@ -111,12 +136,14 @@ async function handleFormSubmit(event) {
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
 
-        if (!workoutData.name || !workoutData.type) {
-            showError('Please fill in workout name and type');
+        try {
+            validateWorkoutData(workoutData);
+        } catch (validationError) {
+            showError(validationError.message);
             return;
         }
 
-        const workoutId = document.getElementById('workout-id')?.value;
+        const workoutId = document.getElementById('workout-id').value;
 
         if (workoutId) {
             await updateWorkout(workoutId, workoutData);
@@ -136,14 +163,16 @@ async function handleFormSubmit(event) {
 
 function getSectionsData() {
     const sections = document.querySelectorAll('.workout-section');
-    return Array.from(sections).map(section => ({
+    return Array.from(sections).map((section, sectionIndex) => ({
+        id: `section-${Date.now()}-${sectionIndex}`,
         type: section.querySelector('.section-type').value,
-        exercises: Array.from(section.querySelectorAll('.exercise-item')).map(exercise => ({
+        exercises: Array.from(section.querySelectorAll('.exercise-item')).map((exercise, exerciseIndex) => ({
+            id: `exercise-${Date.now()}-${sectionIndex}-${exerciseIndex}`,
             name: exercise.querySelector('.exercise-name').value.trim(),
-            rounds: exercise.querySelector('.exercise-rounds')?.value || '',
-            reps: exercise.querySelector('.exercise-reps')?.value || '',
+            rounds: parseInt(exercise.querySelector('.exercise-rounds').value) || 0,
+            reps: parseInt(exercise.querySelector('.exercise-reps').value) || 0,
             notes: exercise.querySelector('.exercise-notes')?.value?.trim() || ''
-        })).filter(exercise => exercise.name) // Only include exercises with names
+        })).filter(exercise => exercise.name)
     }));
 }
 
@@ -185,7 +214,6 @@ async function loadWorkoutData(workoutId) {
 
         const workout = doc.data();
         
-        // Verify user has permission to edit this workout
         if (workout.userId !== firebase.auth().currentUser?.uid) {
             showError('You do not have permission to edit this workout');
             window.location.href = 'workouts.html';
